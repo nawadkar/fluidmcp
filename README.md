@@ -245,6 +245,132 @@ For S3 operations, you can use following `Json` format:
   }
 }
 ```
+---
+
+## Trying out an MCP server
+
+### Create MCP Server:
+```bash
+pip install fluidmcp
+fmcp install "Google Maps MCP Server/google-maps@0.6.2"
+```
+**Output:**
+```
+:wrench: Installing Google Maps MCP Server/google-maps@0.6.2
+:cloud: Installing package from Fluid MCP registry...
+:cloud: Downloading packages
+:package: Saving metadata.json...
+:information_source: Reading metadata.json for API key configuration
+:key: Saving API key(s) to metadata.json
+:information_source: API key(s) saved to metadata.json.
+:white_check_mark: Installation completed successfully.
+```
+
+```bash
+fmcp list
+```
+**Output:**
+```
+Installation directory: /content/.fmcp-packages
+Google Maps MCP Server/google-maps@0.6.2
+```
+
+```bash
+fmcp run all
+```
+**Output:**
+```
+✅ Wrote merged metadata to /content/.fmcp-packages/metadata_all.json
+:blue_book: Reading metadata.json from /content/.fmcp-packages/Google Maps MCP Server/google-maps/0.6.2/metadata.json
+google-maps {'command': 'npx', 'args': ['-y', '@modelcontextprotocol/server-google-maps'], 'env': {'GOOGLE_MAPS_API_KEY': '<YOUR_API_KEY>'}}
+✅ Added google-maps endpoints
+2025-06-06 09:19:04.284 | INFO     | fluidai_mcp.cli:run_all:279 - Starting FastAPI client server on port 8099
+INFO:     Started server process [6848]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8099 (Press CTRL+C to quit)
+```
+
+### Quick-trying out MCP server:
+```python
+# IMP NOTE: You have to add GOOGLE_MAPS_API_KEY in .fmcp-packages/{Package}/metadata.json
+import requests
+import json
+
+mcp_url = "http://localhost:8099/google-maps/mcp"
+mcp_payload = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "maps_search_places",
+      "arguments": {
+        "query": "coffee shops in San Francisco"
+      }
+    }
+}
+mcp_response = requests.post(mcp_url, json=mcp_payload)
+print("Status code:", mcp_response.status_code)
+# Print the response in pretty JSON format
+try:
+    parsed_response = json.loads(mcp_response.text)
+    for item in parsed_response["result"]["content"]:
+            if item["type"] == "text":
+                nested_json = json.loads(item["text"])
+                print(json.dumps(nested_json, indent=2))
+    # print(json.dumps(mcp_response.json(), indent=2))
+except Exception as e:
+    print("Error decoding JSON:", e)
+```
+**Output:**
+```json
+Status code: 200
+{
+  "places": [
+    {
+      "name": "The Coffee Movement",
+      "formatted_address": "1030 Washington St, San Francisco, CA 94108, United States",
+      "location": {
+        "lat": 37.7947575,
+        "lng": -122.4102936
+      },
+      "place_id": "ChIJoTMb3PKAhYARsXkQt469sBw",
+      "rating": 4.8,
+      "types": [
+        "cafe",
+        "food",
+        "point_of_interest",
+        "store",
+        "establishment"
+      ]
+    },
+    {
+      "name": "Sextant Coffee Roasters",
+      "formatted_address": "1415 Folsom St, San Francisco, CA 94103, United States",
+      "location": {
+        "lat": 37.7724716,
+        "lng": -122.4040877
+      },
+      "place_id": "ChIJW9Zu0uGAhYARQ5p0JqvV0Ew",
+      "rating": 4.6,
+      "types": [
+        "cafe",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "store",
+        "establishment"
+      ]
+    }
+  ]
+}
+```
+You can further checkout 'examples/chat_google_maps.ipynb'
+### Using Server-Sent Events (SSE) for Streaming Responses
+
+For MCP tools that support incremental or chunked data delivery, FluidMCP provides a Server-Sent Events (SSE) endpoint. This is particularly useful for long-running operations or when you want to process data as it arrives, rather than waiting for the entire response. To use this, you would typically make a POST request to the `/{package_name}/sse` endpoint with your standard JSON-RPC payload. The server will then hold the connection open and stream back events, where each event's data field will contain a part of the JSON response. Clients should be configured to listen for these events and process them accordingly. This allows for a more responsive user experience, especially when dealing with large language models or other tools that generate output progressively.
+
+
 
 ---
 
@@ -308,9 +434,3 @@ FluidMCP CLI connects to the FluidMCP registry to download packages. The registr
 - Package discovery and search
 
 ---
-
-# Support
-
-For support, contact:
-
-📧 **Email:** [info@fluid.ai](mailto:info@fluid.ai)
