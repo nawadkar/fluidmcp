@@ -2,7 +2,7 @@ import os
 import json
 import subprocess
 import shutil
-from typing import Union, Dict, Any
+from typing import Union, Dict, Any, Iterator
 from pathlib import Path
 from loguru import logger
 import time
@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict
 from fastapi import FastAPI, Request, APIRouter, Body, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
 import threading
@@ -178,7 +178,57 @@ def create_mcp_router(package_name: str, process: subprocess.Popen) -> APIRouter
             return JSONResponse(content=json.loads(response_line))
         except Exception as e:
             return JSONResponse(status_code=500, content={"error": str(e)})
+    
+    # New SSE endpoint
+    @router.post(f"/{package_name}/sse", tags=[package_name])
+    async def sse_stream(
+        request: Dict[str, Any] = Body(
+            ...,
+            example={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "",
+                "params": {}
+            }
+        ), token: str = Depends(get_token)
+    ):
+        async def event_generator() -> Iterator[str]:
+            try:
+                # Convert dict to JSON string and send to MCP server
+                msg = json.dumps(request)
+                process.stdin.write(msg + "\n")
+                process.stdin.flush()
+                
+                # Read from stdout and stream as SSE events
+                while True:
+                    response_line = process.stdout.readline()
+                    if not response_line:
+                        break
+                    
+                    # Add logging
+                    logger.debug(f"Received from MCP: {response_line.strip()}")
+                    
+                    # Format as SSE event
+                    yield f"data: {response_line.strip()}\n\n"
+                    
+                    # Check if response contains "result" which indicates completion
+                    try:
+                        response_data = json.loads(response_line)
+                        if "result" in response_data:
+                            # If it's a final result, we can stop the stream
+                            break
+                    except json.JSONDecodeError:
+                        # If it's not valid JSON, just stream it as-is
+                        pass
+                    
+            except Exception as e:
+                # Send error as SSE event
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream"
+        )
         
     @router.get(f"/{package_name}/mcp/tools/list", tags=[package_name])
     async def list_tools(token: str = Depends(get_token)):
@@ -253,7 +303,6 @@ def create_mcp_router(package_name: str, process: subprocess.Popen) -> APIRouter
                 status_code=500, 
                 content={"error": str(e)}
             )
-                                    
     return router
 
 if __name__ == '__main__':
